@@ -163,6 +163,11 @@ func (r *dispatcher) doStatusChangedEvent(evt *store.Evt) {
 			if bind.svrID == value.meta.ID {
 				hasServer = true
 				bind.status = value.status
+				//harrybi 服务上线后立即发给探针
+				if value.status == metapb.Up {
+					tryRqstAddrChan <- value.meta.Addr
+				}
+
 			}
 		}
 

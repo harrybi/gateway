@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -34,6 +35,7 @@ var (
 
 var (
 	globalHTTPOptions *util.HTTPOption
+	tryRqstAddrChan   = make(chan string, 100)
 )
 
 const (
@@ -113,6 +115,11 @@ func (p *Proxy) init() {
 	if err != nil {
 		log.Fatalf("init route table failed, errors:\n%+v",
 			err)
+	}
+
+	//harrybi 增加探针线程
+	for i := 0; i < runtime.NumCPU(); i++ {
+		go tryRequest(p)
 	}
 
 	p.dispatcher.load()
@@ -592,4 +599,24 @@ func (p *Proxy) doProxy(dn *dispatchNode, adjustH func(*proxyContext)) {
 
 func getIndex(opt *uint64, size uint64) int {
 	return int(atomic.AddUint64(opt, 1) % size)
+}
+
+//tryRequest harrybi 20190815
+func tryRequest(p *Proxy) {
+	req := new(fasthttp.Request)
+	opt := util.DefaultHTTPOption()
+	opt.ReadTimeout = time.Second * 3
+	opt.WriteTimeout = time.Second * 3
+	for addr := range tryRqstAddrChan {
+		rsp, err := p.client.Do(req, addr, opt)
+		if err != nil {
+			log.Errorf("tryRequest ClientDo:%v Failed:%v", addr, err)
+			continue
+		}
+		if rsp.StatusCode() != fasthttp.StatusOK {
+			log.Warnf("tryRequest:%v StatusCode Not OK:%v", addr, rsp.StatusCode())
+			continue
+		}
+		log.Infof("tryRequest:%v OK", addr)
+	}
 }
